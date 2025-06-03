@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L2.L2_branch` AS
+rn_w_vatCREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L2.L2_branch` AS
 select
 branch_id, ---PK
 branch_name,
@@ -25,7 +25,7 @@ SELECT
 
   IF(amount_w_vat <= 0, 0, amount_w_vat) AS amount_w_vat,
   IF(amount_w_vat <= 0, 0, amount_w_vat / 1.20) AS amount_wo_vat,
-   
+  return_w_vat,
   amount_payed,
   date_insert,
   status_int, --- ze status sloupec int status int a flag_invoice_issued jako popis "issued" pod 100 a "not issued" osotatní
