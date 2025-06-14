@@ -1,3 +1,5 @@
+--behem psani kodu, pis vzdy komentare, pro sebe i pro ostatni
+--L1_product_purchase
 CREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L1.L1_product_purchase` AS
 SELECT
 CAST(pp.id_package as INT64) as product_purchase_id,  ---PK
@@ -8,7 +10,8 @@ DATE(DATETIME(TIMESTAMP(pp.start_date), "Europe/Prague")) AS product_valid_from,
 DATE(DATETIME(TIMESTAMP(pp.end_date), "Europe/Prague")) AS product_valid_to,
 SAFE_CAST(pp.fee AS FLOAT64) AS price_wo_vat,
 DATE(DATETIME(TIMESTAMP(pp.date_update), "Europe/Prague")) AS date_update,
-SAFE_CAST(pp.package_status AS INT64) AS product_status,   --FK
+SAFE_CAST(pp.package_status AS INT64) AS product_status,--FK
+pp.package_status AS product_status_id, --přidání status_id
 pp.measure_unit AS measure_unit,
 SAFE_CAST(pp.id_branch AS INT64) AS branch_id, --FK
 DATE(DATETIME(TIMESTAMP(pp.load_date), "Europe/Prague")) AS load_date,
@@ -26,14 +29,16 @@ LEFT JOIN `tokyo-comfort-455613-e1.L0_google_sheet.status` AS s
  where pp.id_package is not null
  QUALIFY ROW_NuMBER() OVER(PARTITION BY pp.id_package) = 1
 
+ --L1_branch
 CREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L1.L1_branch` AS
 select
 SAFE_CAST(id_branch AS INT64) AS branch_id, ---PK
-branch_name AS branch_name,
-DATE(DATETIME(TIMESTAMP(date_update), "Europe/Prague")) AS product_status_update_date
+branch_name --AS branch_name, -- Alias je tu zbytečný
+--DATE(DATETIME(TIMESTAMP(date_update), "Europe/Prague")) AS product_status_update_date --tohle je tu také nadbytečné
 FROM `tokyo-comfort-455613-e1.L0_google_sheet.branch`
 WHERE id_branch != "NULL"
 
+ --L1_contract
 CREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L1.L1_contract` AS
 SELECT
 CAST(id_contract AS INT64) AS contract_id, -- PK
@@ -44,7 +49,7 @@ DATE(DATETIME(TIMESTAMP(date_registered), "Europe/Prague")) AS registred_date,
 DATE(DATETIME(TIMESTAMP(date_signed), "Europe/Prague")) AS signed_date,
 DATE(DATETIME(TIMESTAMP(activation_process_date), "Europe/Prague")) AS activation_process_date,
 DATE(DATETIME(TIMESTAMP(prolongation_date), "Europe/Prague")) AS prolongation_date,
-registration_end_reason AS registration_end_reason,
+registration_end_reason --AS registration_end_reason,
 CAST(flag_prolongation AS BOOL) AS flag_prolongation, ---ověřeno dříve distinct, že jsou jen true or false
 CAST(flag_send_inv_email AS BOOL) AS flag_send_inv_email,  ---ověřeno dříve distinct, že jsou jen true or false
 contract_status AS contract_status,
@@ -56,7 +61,7 @@ and id_branch IS NOT NULL
 QUALIFY ROW_NuMBER() OVER(PARTITION BY id_contract) = 1
 ;
 
-
+--invoice
 CREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L1.L1_invoice` AS
 SELECT
   CAST(id_invoice AS INT64) AS invoice_id, -- PK
@@ -76,14 +81,10 @@ SELECT
   SAFE_CAST(value_storno AS FLOAT64) AS return_w_vat,
   DATE(DATETIME(TIMESTAMP(date_insert), "Europe/Prague")) AS date_insert,
   SAFE_CAST(status AS INT64) AS status_int, --- ze status sloupec int status int a flag_invoice_issued jako popis "issued" pod 100 a "not issued" osotatní
-  CASE
-    WHEN SAFE_CAST(status AS INT64) < 100 THEN 'issued'
-    ELSE 'not issued'
-  END AS flag_invoice_issued,
+ -- Invoice status. Invoice status < 100  have been issued. >= 100 - not issued
+  IF(status < 100, TRUE, FALSE) AS flag_invoice_issued,
   DATE(DATETIME(TIMESTAMP(date_update), "Europe/Prague")) AS date_update,
   CAST(id_branch AS INT64) AS branch_id, -- FK  --- ověřeno dríve, že žádná hodnota není Null
-
-
   SAFE_CAST(invoice_type AS INT64) AS invoice_type_id,
   CASE
     WHEN SAFE_CAST(invoice_type AS INT64) = 1 THEN 'invoice'
@@ -97,17 +98,18 @@ FROM `tokyo-comfort-455613-e1.L0_accounting_system.invoice`
 WHERE id_invoice IS NOT NULL 
 QUALIFY ROW_NuMBER() OVER(PARTITION BY id_invoice) = 1
 
+--L1_invoice_load
 create or replace view `tokyo-comfort-455613-e1.L1.L1_invoice_load` as 
 select
   SAFE_CAST(id_load AS INT64) AS load_id, ----PK
   SAFE_CAST(id_contract AS INT64) AS contract_id, ---FK
   SAFE_CAST(id_package AS INT64) AS package_id, ----FK
   SAFE_CAST(id_package_template AS FLOAT64) AS package_template_id, ---FK
-  SAFE_CAST(notlei AS FLOAT64) AS notlei,
+  SAFE_CAST(notlei AS FLOAT64) AS price_wo_vat_usd,
   currency AS currency,
-  SAFE_CAST(tva AS INT64) AS tva,
-  SAFE_CAST(value AS FLOAT64) AS value,
-  SAFE_CAST(payed AS FLOAT64) AS payed,
+  SAFE_CAST(tva AS INT64) AS vat_rate,
+  SAFE_CAST(value AS FLOAT64) AS price_w_vat_usd,
+  SAFE_CAST(payed AS FLOAT64) AS paid_w_vat_usd,
   um AS unit_of_measure,
   case 
     when um IN ('mesia','m?síce','m?si?1ce','měsice','mesiace','měsíce','mesice') then  'month'
@@ -127,27 +129,28 @@ from `tokyo-comfort-455613-e1.L0_accounting_system.invoice_load`
 where id_load is not NULL and id_contract is not NULL and id_package is not NULL and id_package_template is not NULL
 QUALIFY ROW_NuMBER() OVER(PARTITION BY id_load) = 1
 
-
+--L1_product
 CREATE OR REPLACE VIEW `tokyo-comfort-455613-e1.L1.L1_product` AS
 select
 CAST(id_product as INT64) as product_id,
-LOWER(name) AS name,
-LOWER(type) AS type,
-LOWER(category) AS category,
+LOWER(name) AS product_name,
+LOWER(type) AS product_type,
+LOWER(category) AS product_category,
 CAST(is_vat_applicable AS BOOL) AS is_vat_applicable,
-DATE(DATETIME(TIMESTAMP(date_update), "Europe/Prague")) AS date_update
+--DATE(DATETIME(TIMESTAMP(date_update), "Europe/Prague")) AS date_update
 FROM `tokyo-comfort-455613-e1.L0_google_sheet.product`
-where id_product is not NULL
+where id_product is not NULL AND name IS NOT NULL
 QUALIFY ROW_NuMBER() OVER(PARTITION BY id_product) = 1
 
+ --L1_status
 create or replace view `tokyo-comfort-455613-e1.L1.L1_status` as 
 select
 cast(id_status as INT) AS product_status_id
 ,LOWER(status_name) AS product_status_name
-,DATE(TIMESTAMP(date_update), "Europe/Prague") AS product_status_update_date
+--,DATE(TIMESTAMP(date_update), "Europe/Prague") AS product_status_update_date --zbytečné
 from `tokyo-comfort-455613-e1.L0_google_sheet.status`
 where
 id_status IS NOT NULL
-and status_name IS NOT NULL
+--and status_name IS NOT NULL
 QUALIFY ROW_NuMBER() OVER(PARTITION BY id_status) = 1
 ;
